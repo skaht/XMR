@@ -7,8 +7,10 @@ boost package.
 
 The list of package dependencies below is a work-in-progress and is not complete:
 
+```
 1) curl
-2) 
+2) ???
+```
 
 
 1% ./bytes_to_words -h
