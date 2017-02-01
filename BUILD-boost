@@ -1,0 +1,89 @@
+#!/bin/tcsh -fe
+# BUILD-boost
+
+# No libboost.pc package contents file is produced by this script
+# Have not figured out how to compile the code in a dirrectory different from
+# the distribution source code directory
+
+set  package              = boost
+set  package_version      = 1.56.0
+
+set  boost_dir            = `pwd`/boost
+set  processors_available = `sysctl -n hw.ncpu`
+set  toolset              = darwin
+set  architecture         = x86
+set  address_model        = 64
+
+echo ""
+echo ""
+echo "Building package: $package"_"$package_version"
+echo ""
+echo ""
+
+foreach directory ( build $package"_"$package_version $package_version )
+  if( -d $directory ) then
+      rm -fr $directory
+  endif
+end
+
+# Extraction below renames the top level directory, e.g., 1_56_0 to 1.56.0
+mkdir $package"_"$package_version
+tar xvjf $package"_"1_56_0.tar.bz2 -C $package"_"$package_version --strip-components 1
+
+pushd $package"_"$package_version
+
+#--with-icu=$icu_dir/$icu_version \
+
+./bootstrap.sh \
+--prefix=$boost_dir/$package_version \
+--libdir=$boost_dir/$package_version/lib \
+--with-toolset=$toolset \
+--with-libraries=chrono,date_time,filesystem,iostreams,locale,program_options,regex,system,test,thread \
+--show-libraries
+
+# Setting $CC and $CXX environmental variables do nothing
+# The line below is Boost's way of setting the compiler and its options for the build
+cp ../modified-boost-build-club-project-config.jam project-config.jam
+
+
+# "b2 behaves a as a "configure" and "make"
+#-sICU_PATH=$icu_dir/$icu_version \
+#-sICU_LINK="-L$icu_dir/$icu_version/lib -licui18n -licuuc -licudata -ldl" \
+
+./b2 \
+--prefix=$boost_dir/$package_version \
+--libdir=$boost_dir/$package_version/lib \
+--build-dir=$boost_dir/build \
+install --reconfigure \
+-j $processors_available \
+toolset=$toolset \
+architecture=$architecture \
+address-model=$address_model \
+link=static,shared \
+cxxflags="-stdlib=libc++" \
+linkflags="-stdlib=libc++" \
+threading=multi \
+variant=release \
+-d0 \
+-q \
+-sBOOST_ROOT=$boost_dir/$package"_"$package_version \
+boost.locale.iconv=off \
+boost.locale.posix=off \
+--with-chrono \
+--with-date_time \
+--with-filesystem \
+--with-iostreams \
+--with-locale \
+--with-program_options \
+--with-regex \
+--with-system \
+--with-thread \
+--with-test
+
+popd
+
+echo ""
+echo ""
+echo "Finished building & installing: $package"_"$package_version"
+echo ""
+echo ""

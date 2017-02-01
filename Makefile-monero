@@ -1,0 +1,189 @@
+SHELL := /bin/tcsh
+.SHELLFLAGS := -f -e
+.ONESHELL :=
+# If files named "all" and "clean" exist, forces associated target update
+.PHONY: all clean
+
+# 1) "make scratch" will download needed packages and compile code for a Mac
+# 2) Environmental variables "CC, CXX, CFLAGS, CXXFLAGS" as needed for different platforms
+# 3) Tweek modified-boost-build-club-project-config.jam file as needed for different platforms
+
+CC       = clang   -arch x86_64 -mmacosx-version-min=10.11
+CXX      = clang++ -arch x86_64 -mmacosx-version-min=10.11
+CFLAGS   = -std=c99 -O2 -Wno-implicit-int
+CXXFLAGS = -std=c++11 -O2 
+
+package        = monero
+BOOST_ROOT_DIR = ./boost/1.56.0
+OBJ_MONERO_DIR = objs_monero
+SRCDIR         = $(package)
+INCLUDE        = -I./$(package)
+
+
+all: bytes_to_words \
+     inverse_mnemonics \
+     kec256 \
+     sc_reduce32 \
+     secret_key_to_public_key \
+     xmr
+
+scratch: download build_boost extract_monero objdir all
+
+
+# MAKE OBJ DIRECTORY AS NEEDED
+
+objdir: $(OBJ_MONERO_DIR)
+$(OBJ_MONERO_DIR):
+	mkdir $(OBJ_MONERO_DIR)
+
+
+# FETCH SOURCE CODE FROM GITHUB AND SOURCEFORGE
+
+download: git_monero download_boost
+
+download_boost:
+	curl -vL http://downloads.sourceforge.net/project/boost/boost/1.56.0/boost_1_56_0.tar.bz2 -o boost_1_56_0.tar.bz2
+
+# Compiling monero/src/crypto/hash.c on a Mac requires editing monero/src/crypto/hash-ops.h 
+# Needed to comment out two "static_assert" lines
+# http://en.cppreference.com/w/cpp/language/static_assert
+# https://llvm.org/bugs/show_bug.cgi?id=26672
+
+git_monero: 
+	git clone --branch v0.10.1 --single-branch https://github.com/monero-project/monero
+	cat monero/src/crypto/hash-ops.h | sed 's/static_assert/\/\/static_assert/' >! TEMP
+	mv TEMP monero/src/crypto/hash-ops.h
+	tar cvzf monero.tar.gz monero
+
+
+# EXTRACT AND BUILD PACKAGES AS NEEDED FROM LOCAL TAR BALLS
+
+extract_monero:
+	if( -d monero )       rm -fr monero
+	tar xvf monero.tar.gz
+
+build_boost:
+	if( -d boost )        rm -fr boost
+	if( -d boost_1_56_0 ) rm -fr boost_1_56_0
+	tar xvf boost_1_56_0.tar.bz2
+	./BUILD-boost
+
+tarball:
+	pushd ..; tar cvzf XMR-monero.tar.gz \
+                  XMR/README.txt \
+                  XMR/BUILD-boost \
+                  XMR/modified-boost-build-club-project-config.jam \
+                  XMR/Makefile \
+                  XMR/Makefile-monero \
+                  XMR/bytes_to_words.cpp \
+                  XMR/inverse_mnemonics.cpp \
+                  XMR/kec256.cpp \
+                  XMR/sc_reduce32.cpp \
+                  XMR/secret_key_to_public_key.cpp \
+                  XMR/xmr.cpp \
+                  XMR/xmr_common.cpp  \
+                  XMR/xmr_common.h; popd
+
+
+# COMPILING EXECUTABLE MAIN FUNCTIONS
+
+$(OBJ_MONERO_DIR)/sc_reduce32.o: sc_reduce32.cpp
+	$(CXX) $(CXXFLAGS) -I. -c $< -o $@
+
+$(OBJ_MONERO_DIR)/xmr_common.o: xmr_common.cpp
+	$(CXX) $(CXXFLAGS) -I./monero/src -I./monero/src/crypto -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+
+$(OBJ_MONERO_DIR)/kec256.o: kec256.cpp
+	$(CXX) $(CXXFLAGS) -I/. -c $< -o $@
+
+$(OBJ_MONERO_DIR)/secret_key_to_public_key.o: secret_key_to_public_key.cpp
+	$(CXX) $(CXXFLAGS) -I./monero/src -I./monero/src/crypto -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+
+$(OBJ_MONERO_DIR)/bytes_to_words.o: bytes_to_words.cpp
+	$(CXX) $(CXXFLAGS) -I./monero/src -I./monero/src/crypto -I./monero/src/mnemonics -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+
+$(OBJ_MONERO_DIR)/inverse_mnemonics.o: inverse_mnemonics.cpp
+	$(CXX) $(CXXFLAGS) -I./monero/src -I./monero/src/crypto -I./monero/src/mnemonics -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+
+$(OBJ_MONERO_DIR)/xmr.o: xmr.cpp
+	$(CXX) $(CXXFLAGS) -I./monero/src -I./monero/src/crypto -I./monero/src/mnemonics -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+
+
+# COMPILING MONERO OBJECT DEPENDENCIES
+
+MONERO_CRYPTO_OBJS = \
+$(OBJ_MONERO_DIR)/crypto.o \
+$(OBJ_MONERO_DIR)/crypto-ops.o \
+$(OBJ_MONERO_DIR)/crypto-ops-data.o \
+$(OBJ_MONERO_DIR)/hash.o \
+$(OBJ_MONERO_DIR)/keccak.o \
+$(OBJ_MONERO_DIR)/random.o
+
+$(OBJ_MONERO_DIR)/crypto.o:     monero/src/crypto/crypto.cpp
+	$(CXX) $(CXXFLAGS) -I./monero/src -I./monero/contrib/epee/include -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+
+$(OBJ_MONERO_DIR)/crypto-ops.o: monero/src/crypto/crypto-ops.c
+	$(CC) $(CFLAGS) -I./monero/contrib/epee/include -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+
+$(OBJ_MONERO_DIR)/crypto-ops-data.o: monero/src/crypto/crypto-ops-data.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_MONERO_DIR)/hash.o: monero/src/crypto/hash.c
+	$(CC) $(CFLAGS) -I./monero/src -I./monero/contrib/epee/include -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+# within monero/src/crypto/hash-ops.h, had to comment out comment out two compile time "static_assert()" assertions
+# http://en.cppreference.com/w/cpp/language/static_assert
+
+$(OBJ_MONERO_DIR)/keccak.o: monero/src/crypto/keccak.c
+	$(CC) $(CFLAGS) -I./monero/src -I./monero/contrib/epee/include -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+
+$(OBJ_MONERO_DIR)/random.o: monero/src/crypto/random.c
+	$(CC) $(CFLAGS) -I./monero/src -I./monero/contrib/epee/include -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+
+MONERO_MNEMONICS_OBJS = \
+$(OBJ_MONERO_DIR)/electrum-words.o 
+
+$(OBJ_MONERO_DIR)/electrum-words.o : monero/src/mnemonics/electrum-words.cpp
+	$(CXX) $(CXXFLAGS) -I./monero/src -I$(BOOST_ROOT_DIR)/include -c $< -o $@
+
+
+# LINKING EXECUTABLES
+
+sc_reduce32: $(OBJ_MONERO_DIR)/sc_reduce32.o $(OBJ_MONERO_DIR)/xmr_common.o $(MONERO_CRYPTO_OBJS)
+	$(CXX) -o $@ $(OBJ_MONERO_DIR)/sc_reduce32.o $(OBJ_MONERO_DIR)/xmr_common.o $(MONERO_CRYPTO_OBJS) $(BOOST_ROOT_DIR)/lib/libboost_system.a
+
+kec256: $(OBJ_MONERO_DIR)/kec256.o $(OBJ_MONERO_DIR)/keccak.o
+	$(CXX) -o $@ $(OBJ_MONERO_DIR)/kec256.o $(OBJ_MONERO_DIR)/keccak.o
+
+secret_key_to_public_key: $(OBJ_MONERO_DIR)/secret_key_to_public_key.o $(MONERO_CRYPTO_OBJS)
+	$(CXX) -o $@ $(OBJ_MONERO_DIR)/secret_key_to_public_key.o $(MONERO_CRYPTO_OBJS) $(BOOST_ROOT_DIR)/lib/libboost_system.a
+
+bytes_to_words: $(OBJ_MONERO_DIR)/bytes_to_words.o $(MONERO_MNEMONICS_OBJS)
+	$(CXX) -o $@ $(OBJ_MONERO_DIR)/bytes_to_words.o $(MONERO_MNEMONICS_OBJS) $(BOOST_ROOT_DIR)/lib/libboost_system.a
+
+inverse_mnemonics: $(OBJ_MONERO_DIR)/inverse_mnemonics.o $(MONERO_MNEMONICS_OBJS)
+	$(CXX) -o $@ $(OBJ_MONERO_DIR)/inverse_mnemonics.o $(MONERO_MNEMONICS_OBJS) $(BOOST_ROOT_DIR)/lib/libboost_system.a
+
+xmr: $(OBJ_MONERO_DIR)/xmr.o $(OBJ_MONERO_DIR)/xmr_common.o $(OBJ_MONERO_DIR)/keccak.o
+	$(CXX) -o $@ $(OBJ_MONERO_DIR)/xmr.o $(OBJ_MONERO_DIR)/xmr_common.o $(MONERO_MNEMONICS_OBJS) $(MONERO_CRYPTO_OBJS) $(BOOST_ROOT_DIR)/lib/libboost_system.a
+
+
+# CLEANUP
+
+clean:
+	if( -d $(OBJ_MONERO_DIR) )        rm -fr $(OBJ_MONERO_DIR)
+	if( -e bytes_to_words )           rm bytes_to_words
+	if( -e inverse_mnemonics )        rm inverse_mnemonics
+	if( -e kec256 )                   rm kec256
+	if( -e sc_reduce32 )              rm sc_reduce32
+	if( -e secret_key_to_public_key ) rm secret_key_to_public_key
+	if( -e xmr )                      rm xmr
+
+immaculate: clean
+	if( -d monero )                   rm -fr monero
+	if( -d boost_1_56_0 )             rm -fr boost_1_56_0
+	if( -d boost_1.56.0 )             rm -fr boost_1.56.0
+	if( -d boost        )             rm -fr boost
+
+sterile: clean immaculate
+	if( -e monero.tar.gz )            rm monero.tar.gz
+	if( -e boost_1_56_0.tar.bz2 )     rm boost_1_56_0.tar.bz2
