@@ -2,8 +2,7 @@ The Makefile works on a Mac OSX platform. Tweaks might need to be made for a
 few compiler flags for your UNIX platform.  A **make scratch** will download
 monero and boost packages, compile them, and build the six standalone commands
 below.  The Makefile uses tcsh shell commands.  Similarly, the BUILD-boost
-script called by the makefile which builds the boost package also used by
-Monero.
+script called by the makefile builds the boost package used by Monero.
 
 The list of package dependencies below is a work-in-progress and is not complete:
 
